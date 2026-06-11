@@ -46,7 +46,7 @@ def get_gdp_data():
     #
     # So let's pivot all those year-columns into two: Year and GDP
     gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
+        ['Country Name', 'Country Code'],
         [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
         'Year',
         'GDP',
@@ -54,6 +54,16 @@ def get_gdp_data():
 
     # Convert years from string to integers
     gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+
+    # Remove World Bank regional/aggregate entries (not actual countries)
+    AGGREGATE_CODES = {
+        'AFE', 'AFW', 'ARB', 'CEB', 'CSS', 'EAP', 'EAR', 'EAS', 'ECA', 'ECS',
+        'EMU', 'EUU', 'FCS', 'HIC', 'HPC', 'IBD', 'IBT', 'IDA', 'IDB', 'IDX',
+        'LAC', 'LCN', 'LDC', 'LIC', 'LMC', 'LMY', 'LTE', 'MEA', 'MIC', 'MNA',
+        'NAC', 'OED', 'OSS', 'PRE', 'PSS', 'PST', 'SAS', 'SSA', 'SSF', 'SST',
+        'TEA', 'TEC', 'TLA', 'TMN', 'TSA', 'TSS', 'UMC', 'WLD',
+    }
+    gdp_df = gdp_df[~gdp_df['Country Code'].isin(AGGREGATE_CODES)]
 
     return gdp_df
 
@@ -84,7 +94,7 @@ from_year, to_year = st.slider(
     max_value=max_value,
     value=[min_value, max_value])
 
-countries = gdp_df['Country Code'].unique()
+countries = gdp_df['Country Name'].unique()
 
 if not len(countries):
     st.warning("Select at least one country")
@@ -92,7 +102,7 @@ if not len(countries):
 selected_countries = st.multiselect(
     'Which countries would you like to view?',
     countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
+    ['Germany', 'France', 'United Kingdom', 'Brazil', 'Mexico', 'Japan'])
 
 ''
 ''
@@ -100,7 +110,7 @@ selected_countries = st.multiselect(
 
 # Filter the data
 filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
+    (gdp_df['Country Name'].isin(selected_countries))
     & (gdp_df['Year'] <= to_year)
     & (from_year <= gdp_df['Year'])
 ]
@@ -113,7 +123,7 @@ st.line_chart(
     filtered_gdp_df,
     x='Year',
     y='GDP',
-    color='Country Code',
+    color='Country Name',
 )
 
 ''
@@ -133,19 +143,19 @@ for i, country in enumerate(selected_countries):
     col = cols[i % len(cols)]
 
     with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
+        first_vals = first_year[first_year['Country Name'] == country]['GDP'].values
+        last_vals = last_year[last_year['Country Name'] == country]['GDP'].values
 
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
+        first_gdp = float(first_vals[0]) / 1_000_000_000 if len(first_vals) > 0 else float('nan')
+        last_gdp = float(last_vals[0]) / 1_000_000_000 if len(last_vals) > 0 else float('nan')
+
+        if math.isnan(last_gdp):
+            st.metric(label=f'{country} GDP', value='n/a')
+        elif math.isnan(first_gdp):
+            st.metric(label=f'{country} GDP', value=f'{last_gdp:,.0f}B', delta='n/a', delta_color='off')
         else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+            st.metric(
+                label=f'{country} GDP',
+                value=f'{last_gdp:,.0f}B',
+                delta=f'{last_gdp / first_gdp:,.2f}x',
+            )
